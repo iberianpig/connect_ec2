@@ -1,13 +1,13 @@
 #!/bin/sh
 
 if [ $# -lt 2 ]; then
-  echo "give HOST(~/.ssh/config), GROUP_ID(sg-xxxx) [, PROFILE(~/.aws/config)] as arguments"  1>&2
-  echo "$ ssh_ec2 Hostname sg-groupid default" 1>&2
+  echo "give HOST(~/.ssh/config), group-name [, profile(~/.aws/config)] as arguments"  1>&2
+  echo "$ ssh_ec2 Hostname group-name default" 1>&2
   exit 1
 fi
 
 HOST=$1
-GROUP_ID=$2
+GROUP_NAME=$2
 PROFILE="default"
 if [ $# -gt 2 ]; then
   PROFILE=$3
@@ -17,8 +17,18 @@ MY_WAN_IP=$(curl --max-time 2 -s http://whatismyip.akamai.com/)
 
 echo "adding WAN-IP to security-group-ingress" 1>&2
 
+
+# NOTE: convert group-name to group-id
+GROUP_ID=$(aws ec2 describe-security-groups --filters Name=group-name,Values"=$GROUP_NAME" | jq -r '.SecurityGroups[].GroupId')
+
+echo "security group-id=$GROUP_ID"
+
 # NOTE: should use group-id instead of group-name with --profile(https://github.com/aws/aws-cli/issues/1207)
-aws ec2 authorize-security-group-ingress --profile "$PROFILE" --group-id "$GROUP_ID" --protocol tcp --port 22 --cidr "$MY_WAN_IP"/32
+AUTHORIZE_CMD="aws ec2 authorize-security-group-ingress --profile $PROFILE --group-id $GROUP_ID --protocol tcp --port 22 --cidr $MY_WAN_IP/32"
+
+echo "try command: $AUTHORIZE_CMD"
+
+$AUTHORIZE_CMD
 
 ret_auth=$?
 
@@ -44,7 +54,9 @@ fi
 
 echo "try ssh..."  1>&2
 
-ssh "$HOST"
+SSH_CMD="ssh $HOST"
+echo "$SSH_CMD"
+$SSH_CMD
 
 ret_ssh=$?
 
@@ -60,4 +72,6 @@ fi
 
 echo "revoke WAN-IP from security-group-ingress"  1>&2
 
-aws ec2 revoke-security-group-ingress --profile "$PROFILE" --group-id "$GROUP_ID" --protocol tcp --port 22 --cidr "$MY_WAN_IP"/32
+REVOKE_CMD="aws ec2 revoke-security-group-ingress --profile $PROFILE --group-id $GROUP_ID --protocol tcp --port 22 --cidr $MY_WAN_IP/32"
+echo "$REVOKE_CMD"
+$REVOKE_CMD
